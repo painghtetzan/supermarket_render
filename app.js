@@ -21,7 +21,8 @@ const connection = mysql.createConnection({
     host: 'tzenc1.h.filess.io',
     user: 'SUPERMARKETDB_instanthit',
     password: '9ea0853194d6bd3356087e5a8d165382dc7d533b',
-    database: 'SUPERMARKETDB_instanthit'
+    database: 'SUPERMARKETDB_instanthit',
+    port: 3307
   });
 
 connection.connect((err) => {
