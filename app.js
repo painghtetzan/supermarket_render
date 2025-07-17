@@ -17,21 +17,29 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-const connection = mysql.createConnection({
-    host: 'tzenc1.h.filess.io',
-    user: 'SUPERMARKETDB_instanthit',
-    password: '9ea0853194d6bd3356087e5a8d165382dc7d533b',
-    database: 'SUPERMARKETDB_instanthit',
-    port: 3307
-  });
 
-connection.connect((err) => {
-    if (err) {
-        console.error('Error connecting to MySQL:', err);
-        return;
-    }
-    console.log('Connected to MySQL database');
+
+const pool = mysql.createPool({
+  host: 'tzenc1.h.filess.io',
+  user: 'SUPERMARKETDB_instanthit',
+  password: '9ea0853194d6bd3356087e5a8d165382dc7d533b',
+  database: 'SUPERMARKETDB_instanthit',
+  port: 3307,
+  waitForConnections: true,
+  connectionLimit: 5,     // max simultaneous connections in the pool
+  queueLimit: 0
 });
+
+// Run a query using the pool:
+pool.query('SELECT 1 + 1 AS solution', (error, results) => {
+  if (error) {
+    console.error('Query error:', error);
+  } else {
+    console.log('Query result:', results[0].solution); // should print 2
+  }
+  // No need to call pool.end() unless you want to shut down the app and close all connections
+});
+
 
 // Set up view engine
 app.set('view engine', 'ejs');
@@ -96,7 +104,7 @@ app.get('/',  (req, res) => {
 
 app.get('/inventory', checkAuthenticated, checkAdmin, (req, res) => {
     // Fetch data from MySQL
-    connection.query('SELECT * FROM products', (error, results) => {
+    pool.query('SELECT * FROM products', (error, results) => {
       if (error) throw error;
       res.render('inventory', { products: results, user: req.session.user });
     });
@@ -111,7 +119,7 @@ app.post('/register', validateRegistration, (req, res) => {
     const { username, email, password, address, contact, role } = req.body;
 
     const sql = 'INSERT INTO users (username, email, password, address, contact, role) VALUES (?, ?, SHA1(?), ?, ?, ?)';
-    connection.query(sql, [username, email, password, address, contact, role], (err, result) => {
+    pool.query(sql, [username, email, password, address, contact, role], (err, result) => {
         if (err) {
             throw err;
         }
@@ -135,7 +143,7 @@ app.post('/login', (req, res) => {
     }
 
     const sql = 'SELECT * FROM users WHERE email = ? AND password = SHA1(?)';
-    connection.query(sql, [email, password], (err, results) => {
+    pool.query(sql, [email, password], (err, results) => {
         if (err) {
             throw err;
         }
@@ -245,7 +253,7 @@ app.post('/addProduct', upload.single('image'),  (req, res) => {
 
     const sql = 'INSERT INTO products (productName, quantity, price, image) VALUES (?, ?, ?, ?)';
     // Insert the new product into the database
-    connection.query(sql , [name, quantity, price, image], (error, results) => {
+    pool.query(sql , [name, quantity, price, image], (error, results) => {
         if (error) {
             // Handle any error that occurs during the database operation
             console.error("Error adding product:", error);
