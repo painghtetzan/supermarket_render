@@ -28,6 +28,10 @@
     </nav>
 
   <div class="container">
+    <% if(success && success.length >0){ %>
+    <div class="alert alert-success"> <%= success[0] %></div>
+      <% } %>
+    
     <p>Welcome, <%= user.username %> (<%= user.role %>)</p>
     <br>
     <div class="text-center"><h2>Products from Supermarket</h2></div>
@@ -46,23 +50,13 @@
       <tbody>
         <% for(let i=0; i < products.length; i++) { %>
           <tr>
-            <td><a href="/product/<%= products[i].productId %>" ><%= products[i].productName %></a></td>
-            <td><img src = "images/<%= products[i].image %>" width="20%"></td>
+            <td><a href="/product/<%= products[i].id %>" ><%= products[i].name %></a></td>
+            <td><img src = "<%= products[i].image %>" width="20%"></td>
             <td><%= products[i].quantity %></td>
             <td>$<%= products[i].price.toFixed(2) %></td>
-            <!-- <td>
-              <select id="role" name="role" class="form-control" >
-                <option value="1" selected >1</option>
-                <option value="2" >2</option>
-                <option value="3" >3</option>
-                <option value="4" >4</option>
-                <option value="5" >5</option>
-              </select>
-            </td> -->
-            <!-- Buy Link -->
-            <!-- <td><a href="/buyProduct/<%#= products[i].productId %>" class="btn btn-primary mt-3">Buy</a></td> -->
+           
             <td>
-              <select class="form-control" onchange="document.getElementById('quantity-<%= products[i].productId %>').value = this.value">
+              <select class="form-control" onchange="document.getElementById('quantity-<%= products[i].id %>').value = this.value">
                 <% for (let q = 1; q <= 5; q++) { %>
                   <option value="<%= q %>"><%= q %></option>
                 <% } %>
@@ -70,8 +64,8 @@
             </td>
 
             <td>
-                <form action="/add-to-cart/<%= products[i].productId %>" method="POST">
-                  <input type="hidden" name="quantity" id="quantity-<%= products[i].productId %>" value="1">
+                <form action="/add-to-cart/<%= products[i].id %>" method="POST">
+                  <input type="hidden" name="quantity" id="quantity-<%= products[i].id %>" value="1">
                   <button type="submit" class="btn btn-primary mt-3">Buy</button>
                 </form>
             </td>

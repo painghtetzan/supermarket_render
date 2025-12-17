@@ -1,11 +1,14 @@
+require('dotenv').config()
 const express = require('express');
 const mysql = require('mysql2');
 const session = require('express-session');
 const flash = require('connect-flash');
 const multer = require('multer');
 const app = express();
+const supabase = require('./supabase')
 
-// Set up multer for file uploads
+
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'public/images'); // Directory to save uploaded files
@@ -19,49 +22,32 @@ const upload = multer({ storage: storage });
 
 
 
-const pool = mysql.createPool({
-  host: 'tzenc1.h.filess.io',
-  user: 'SUPERMARKETDB_instanthit',
-  password: '9ea0853194d6bd3356087e5a8d165382dc7d533b',
-  database: 'SUPERMARKETDB_instanthit',
-  port: 3307,
-  waitForConnections: true,
-  connectionLimit: 5,     // max simultaneous connections in the pool
-  queueLimit: 0
-});
 
-// Run a query using the pool:
-pool.query('SELECT 1 + 1 AS solution', (error, results) => {
-  if (error) {
-    console.error('Query error:', error);
-  } else {
-    console.log('Query result:', results[0].solution); // should print 2
-  }
-  // No need to call pool.end() unless you want to shut down the app and close all connections
-});
-
-
-// Set up view engine
 app.set('view engine', 'ejs');
-//  enable static files
+
 app.use(express.static('public'));
-// enable form processing
+app.use(express.json())
 app.use(express.urlencoded({
-    extended: false
+    extended: true
 }));
 
-//TO DO: Insert code for Session Middleware below 
+
 app.use(session({
     secret: 'secret',
     resave: false,
     saveUninitialized: true,
-    // Session expires after 1 week of inactivity
+   
     cookie: { maxAge: 1000 * 60 * 60 * 24 * 7 } 
 }));
 
 app.use(flash());
+app.use((req, res, next) => {
+  res.locals.success = req.flash('success')
+  res.locals.error = req.flash('error')
+  next()
+})
 
-// Middleware to check if user is logged in
+
 const checkAuthenticated = (req, res, next) => {
     if (req.session.user) {
         return next();
@@ -81,16 +67,18 @@ const checkAdmin = (req, res, next) => {
     }
 };
 
+
+
 // Middleware for form validation
 const validateRegistration = (req, res, next) => {
-    const { username, email, password, address, contact, role } = req.body;
+    const { username, email, password, role } = req.body;
 
-    if (!username || !email || !password || !address || !contact || !role) {
+    if (!username || !email || !password || !role) {
         return res.status(400).send('All fields are required.');
     }
     
-    if (password.length < 6) {
-        req.flash('error', 'Password should be at least 6 or more characters long');
+    if (password.length < 4) {
+        req.flash('error', 'Password should be at least 4 or more characters long');
         req.flash('formData', req.body);
         return res.redirect('/register');
     }
@@ -98,119 +86,112 @@ const validateRegistration = (req, res, next) => {
 };
 
 // Define routes
-app.get('/',  (req, res) => {
+app.get('/', async(req, res) => {
+    
     res.render('index', {user: req.session.user} );
 });
 
-app.get('/inventory', checkAuthenticated, checkAdmin, (req, res) => {
-    // Fetch data from MySQL
-    pool.query('SELECT * FROM products', (error, results) => {
-      if (error) throw error;
-      res.render('inventory', { products: results, user: req.session.user });
-    });
+app.get('/inventory', checkAuthenticated, checkAdmin, async(req, res) => {
+    
+    const {data,error}= await supabase
+    .from("Items")
+    .select('*')
+
+    if(error){
+        console.log(error)
+    }
+    if(data){
+         res.render('inventory', { products: data, user: req.session.user });
+    }
+     
+    ;
 });
 
 app.get('/register', (req, res) => {
     res.render('register', { messages: req.flash('error'), formData: req.flash('formData')[0] });
 });
 
-app.post('/register', validateRegistration, (req, res) => {
+app.post('/register', validateRegistration, async(req, res) => {
 
-    const { username, email, password, address, contact, role } = req.body;
+    const { name, email, password,role } = req.body;
+    const {data,error} = await supabase
+    .from("Users").insert({
+        name:name,email:email,password:password,role:role
+    })
+    if(error){
+        console.log(error)
+    }else{
+        console.log('registered successfully')
+        res.redirect('/login')
+    }
 
-    const sql = 'INSERT INTO users (username, email, password, address, contact, role) VALUES (?, ?, SHA1(?), ?, ?, ?)';
-    pool.query(sql, [username, email, password, address, contact, role], (err, result) => {
-        if (err) {
-            throw err;
-        }
-        console.log(result);
-        req.flash('success', 'Registration successful! Please log in.');
-        res.redirect('/login');
-    });
+    
 });
 
 app.get('/login', (req, res) => {
     res.render('login', { messages: req.flash('success'), errors: req.flash('error') });
 });
 
-app.post('/login', (req, res) => {
+app.post('/login', async(req, res) => {
     const { email, password } = req.body;
 
-    // Validate email and password
     if (!email || !password) {
         req.flash('error', 'All fields are required.');
         return res.redirect('/login');
     }
-
-    const sql = 'SELECT * FROM users WHERE email = ? AND password = SHA1(?)';
-    pool.query(sql, [email, password], (err, results) => {
-        if (err) {
-            throw err;
-        }
-
-        if (results.length > 0) {
-            // Successful login
-            req.session.user = results[0]; 
-            req.flash('success', 'Login successful!');
-            if(req.session.user.role == 'user')
-                res.redirect('/shopping');
-            else
-                res.redirect('/inventory');
-        } else {
-            // Invalid credentials
-            req.flash('error', 'Invalid email or password.');
-            res.redirect('/login');
-        }
-    });
+    
+    const {data,error} = await supabase
+    .from("Users")
+    .select('*')
+    .eq('email',email)
+    .eq('password',password)
+    console.log(data)
+    if(error){
+        console.log(error)
+    }else{
+        req.session.user = data[0]
+        console.log('session',req.session.user)
+        res.redirect('./inventory')
+    }
+    
 });
 
-app.get('/shopping', checkAuthenticated, (req, res) => {
-    // Fetch data from MySQL
-    connection.query('SELECT * FROM products', (error, results) => {
-        if (error) throw error;
-        res.render('shopping', { user: req.session.user, products: results });
-      });
-});
+app.get('/shopping', checkAuthenticated, async(req, res) => {
+    const {data,error} = await supabase
+    .from("Items")
+    .select("*")
+    if(error){
+        console.log(error)
+    }else{
+        res.render("shopping",{user:req.session.user,products:data})
+    }
 
-app.post('/add-to-cart/:id', checkAuthenticated, (req, res) => {
+});
+session.cart = [] || session.cart
+var cart = session.cart
+app.post('/add-to-cart/:id', checkAuthenticated, async(req, res) => {
     const productId = parseInt(req.params.id);
-    const quantity = parseInt(req.body.quantity) || 1;
+    
+    const {data,error} = await supabase
+    .from("Items").select("*").eq("id",productId)
+    if(error){
+        console.log(error)
+    }
+    else{
+        data[0].quantity = 1
+        cart.push(data[0])
+        console.log('added to cart')
+        req.flash('success',"Added to cart successfully!")
+        res.redirect('/shopping')
+    }
 
-    connection.query('SELECT * FROM products WHERE productId = ?', [productId], (error, results) => {
-        if (error) throw error;
-
-        if (results.length > 0) {
-            const product = results[0];
-
-            // Initialize cart in session if not exists
-            if (!req.session.cart) {
-                req.session.cart = [];
-            }
-
-            // Check if product already in cart
-            const existingItem = req.session.cart.find(item => item.productId === productId);
-            if (existingItem) {
-                existingItem.quantity += quantity;
-            } else {
-                req.session.cart.push({
-                    productId: product.productId,
-                    productName: product.productName,
-                    price: product.price,
-                    quantity: quantity,
-                    image: product.image
-                });
-            }
-
-            res.redirect('/cart');
-        } else {
-            res.status(404).send("Product not found");
-        }
+        
     });
-});
+;
 
 app.get('/cart', checkAuthenticated, (req, res) => {
-    const cart = req.session.cart || [];
-    res.render('cart', { cart, user: req.session.user });
+    
+    res.render('cart', { cart:session.cart, user: req.session.user });
 });
 
 app.get('/logout', (req, res) => {
@@ -218,108 +199,85 @@ app.get('/logout', (req, res) => {
     res.redirect('/');
 });
 
-app.get('/product/:id', checkAuthenticated, (req, res) => {
-  // Extract the product ID from the request parameters
-  const productId = req.params.id;
+app.get('/product/:id', checkAuthenticated, async(req, res) => {
 
-  // Fetch data from MySQL based on the product ID
-  connection.query('SELECT * FROM products WHERE productId = ?', [productId], (error, results) => {
-      if (error) throw error;
+    const productId = req.params.id;
+    const {data,error} = await supabase
+    .from("Items")
+    .select("*")
+    .eq("id",productId)
+    if(error){
+        console.log(error)
+    }else{
+        res.render('product',{product:data[0],user:req.session.user})
+    }
 
-      // Check if any product with the given ID was found
-      if (results.length > 0) {
-          // Render HTML page with the product data
-          res.render('product', { product: results[0], user: req.session.user  });
-      } else {
-          // If no product with the given ID was found, render a 404 page or handle it accordingly
-          res.status(404).send('Product not found');
-      }
-  });
 });
 
 app.get('/addProduct', checkAuthenticated, checkAdmin, (req, res) => {
     res.render('addProduct', {user: req.session.user } ); 
 });
 
-app.post('/addProduct', upload.single('image'),  (req, res) => {
-    // Extract product data from the request body
-    const { name, quantity, price} = req.body;
-    let image;
-    if (req.file) {
-        image = req.file.filename; // Save only the filename
-    } else {
-        image = null;
+app.post('/addProduct',  async(req, res) => {
+    console.log(req.body.name)
+    const {name,quantity,price,image} = req.body
+    const {data,error} = await supabase
+    .from("Items")
+    .insert({
+        name:name,quantity:quantity,price:price,image:image
+    })
+    if(error){
+        console.log(error)
     }
-
-    const sql = 'INSERT INTO products (productName, quantity, price, image) VALUES (?, ?, ?, ?)';
-    // Insert the new product into the database
-    pool.query(sql , [name, quantity, price, image], (error, results) => {
-        if (error) {
-            // Handle any error that occurs during the database operation
-            console.error("Error adding product:", error);
-            res.status(500).send('Error adding product');
-        } else {
-            // Send a success response
-            res.redirect('/inventory');
-        }
-    });
+    else{
+        console.log("added new item successfully")
+        res.redirect("/inventory")
+    }
 });
 
-app.get('/updateProduct/:id',checkAuthenticated, checkAdmin, (req,res) => {
+app.get('/updateProduct/:id',checkAuthenticated, checkAdmin, async(req,res) => {
     const productId = req.params.id;
-    const sql = 'SELECT * FROM products WHERE productId = ?';
-
-    // Fetch data from MySQL based on the product ID
-    connection.query(sql , [productId], (error, results) => {
-        if (error) throw error;
-
-        // Check if any product with the given ID was found
-        if (results.length > 0) {
-            // Render HTML page with the product data
-            res.render('updateProduct', { product: results[0] });
-        } else {
-            // If no product with the given ID was found, render a 404 page or handle it accordingly
-            res.status(404).send('Product not found');
-        }
-    });
+    const {data,error} = await supabase
+    .from('Items')
+    .select('*')
+    .eq("id",productId)
+    if(error){
+        console.log(error)
+    }else{
+        res.render("updateProduct",{user:req.session.user,product:data[0]})
+    }
 });
 
-app.post('/updateProduct/:id', upload.single('image'), (req, res) => {
-    const productId = req.params.id;
-    // Extract product data from the request body
-    const { name, quantity, price } = req.body;
-    let image  = req.body.currentImage; //retrieve current image filename
-    if (req.file) { //if new image is uploaded
-        image = req.file.filename; // set image to be new image filename
-    } 
-
-    const sql = 'UPDATE products SET productName = ? , quantity = ?, price = ?, image =? WHERE productId = ?';
-    // Insert the new product into the database
-    connection.query(sql, [name, quantity, price, image, productId], (error, results) => {
-        if (error) {
-            // Handle any error that occurs during the database operation
-            console.error("Error updating product:", error);
-            res.status(500).send('Error updating product');
-        } else {
-            // Send a success response
-            res.redirect('/inventory');
-        }
-    });
+app.post('/updateProduct/:id', async(req, res) => {
+   const productid = req.params.id
+   const {name,quantity,price,image} = req.body
+   const{data,error} = await supabase
+   .from("Items")
+   .update({
+    name:name,quantity:quantity,price:price,image:image
+   }).eq("id",productid)
+   if(error){
+    console.log(error)
+   }else{
+    console.log('updated successfully')
+    res.redirect('/inventory')
+   }
 });
 
-app.get('/deleteProduct/:id', (req, res) => {
+app.get('/deleteProduct/:id', async(req, res) => {
     const productId = req.params.id;
 
-    connection.query('DELETE FROM products WHERE productId = ?', [productId], (error, results) => {
-        if (error) {
-            // Handle any error that occurs during the database operation
-            console.error("Error deleting product:", error);
-            res.status(500).send('Error deleting product');
-        } else {
-            // Send a success response
-            res.redirect('/inventory');
-        }
-    });
+    const {data,error} = await supabase
+    .from('Items')
+    .delete()
+    .eq("id",productId)
+    if(error){
+        console.log(error)
+    }
+    else{
+        console.log('deleted successfully')
+        res.redirect('/inventory')
+    }
 });
 
 const PORT = process.env.PORT || 3000;
